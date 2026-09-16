@@ -37,11 +37,10 @@ pkg update -y && pkg install git nodejs-lts ffmpeg -y
 
 ### 3. Unduh & Jalankan Server
 ```bash
-git clone https://github.com/USERNAME_ANDA/bot.git
+git clone https://github.com/azahrina/bot.git
 cd bot
 node server
 ```
-> *(Ganti `USERNAME_ANDA` dengan username GitHub Anda)*
 > 
 > *Pada kali pertama dijalankan, server akan memasang library secara otomatis dalam beberapa saat, lalu server langsung aktif di port `7500`.*
 
