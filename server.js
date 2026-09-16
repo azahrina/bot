@@ -1038,8 +1038,12 @@ async function getExtClient(cookies, ua = null, forceReauth = false) {
 // FONTS_DIR is defined globally at the top
 app.use('/api/extension/fonts/files', express.static(FONTS_DIR, { setHeaders: (res) => { res.set('Access-Control-Allow-Origin', '*'); } }));
 app.get('/api/extension/fonts', (req, res) => {
-  try { res.json({ ok: true, fonts: fs.existsSync(FONTS_DIR) ? fs.readdirSync(FONTS_DIR).filter(f => /\.(ttf|otf|woff|woff2)$/i.test(f)) : [] }); }
-  catch (e) { res.json({ ok: true, fonts: [] }); }
+  try {
+    const dataFonts = fs.existsSync(FONTS_DIR) ? fs.readdirSync(FONTS_DIR).filter(f => /\.(ttf|otf|woff|woff2)$/i.test(f)) : [];
+    const localFonts = fs.existsSync(path.join(__dirname, 'fonts')) ? fs.readdirSync(path.join(__dirname, 'fonts')).filter(f => /\.(ttf|otf|woff|woff2)$/i.test(f)) : [];
+    const combined = Array.from(new Set([...dataFonts, ...localFonts]));
+    res.json({ ok: true, fonts: combined });
+  } catch (e) { res.json({ ok: true, fonts: [] }); }
 });
 
 app.get('/api/extension/font', (req, res) => {
@@ -1048,7 +1052,10 @@ app.get('/api/extension/font', (req, res) => {
     if (!filename) return res.status(400).json({ ok: false, error: 'filename required' });
 
     const safe = path.basename(filename);
-    const filePath = path.join(FONTS_DIR, safe);
+    let filePath = path.join(FONTS_DIR, safe);
+    if (!fs.existsSync(filePath)) {
+      filePath = path.join(__dirname, 'fonts', safe);
+    }
 
     if (!fs.existsSync(filePath)) return res.status(404).json({ ok: false, error: 'Font file not found' });
 
@@ -1577,7 +1584,12 @@ app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, 
       scale: storyScale,
       rotation: storyRotation,
       fontSize: linkFontSize,
-      fontFile: (storyFont === 'default' || !storyFont) ? '' : path.join(FONTS_DIR, storyFont),
+      fontFile: (() => {
+        if (!storyFont || storyFont === 'default') return '';
+        if (fs.existsSync(path.join(FONTS_DIR, storyFont))) return path.join(FONTS_DIR, storyFont);
+        if (fs.existsSync(path.join(__dirname, 'fonts', storyFont))) return path.join(__dirname, 'fonts', storyFont);
+        return '';
+      })(),
       overlayText,
       highlightName,
       blur: blur === 'true',

@@ -798,9 +798,10 @@ class instagram {
                 const mid = cookies.find(c => c.name === 'mid');
                 await this.setupDevice(dsUserIdVal);
 
-                // --- SYNC IMPROVEMENT: Keep valid Android UA for native private endpoints ---
-                const isDesktopUa = !browserUa || /Windows|Macintosh|Linux x86_64/i.test(browserUa);
-                this.ig.state.userAgent = isDesktopUa
+                // --- SYNC IMPROVEMENT: Keep valid Android App UA for native private endpoints ---
+                // Any browser UA (Windows, Mac, or Android Kiwi/Lemur) starting with Mozilla/ must be mapped to official IG Android UA
+                const isWebBrowser = !browserUa || browserUa.startsWith('Mozilla/') || /Windows|Macintosh|Linux|Android|Chrome|Safari/i.test(browserUa);
+                this.ig.state.userAgent = isWebBrowser
                     ? 'Instagram 370.0.0.35.101 Android (33/13; 600dpi; 1440x3088; samsung; SM-S918B; dm3q; kalama; en_US; 610000000)'
                     : browserUa;
 

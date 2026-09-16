@@ -41,7 +41,6 @@ git clone https://github.com/azahrina/bot.git
 cd bot
 node server
 ```
-> 
 > *Pada kali pertama dijalankan, server akan memasang library secara otomatis dalam beberapa saat, lalu server langsung aktif di port `7500`.*
 
 ---
