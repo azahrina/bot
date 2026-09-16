@@ -1,0 +1,41 @@
+{
+  "feed": {
+    "enabled": true,
+    "folder": "media/feed",
+    "captionFile": "setup/caption/caption.txt",
+    "count": 1,
+    "delayMin": 10,
+    "delayMax": 15
+  },
+  "profile": {
+    "enabled": true,
+    "avatarFolder": "media/feed",
+    "bioFile": ""
+  },
+  "story": {
+    "enabled": true,
+    "folder": "media/feed",
+    "mediaType": "video",
+    "targetUrlType": "clickdealer",
+    "customUrlValue": "",
+    "stickerTextFile": "setup/sticker/sticker.txt",
+    "count": 1,
+    "shortlinkProvider": "ssur",
+    "shortlinkApiKey": "",
+    "blur": true,
+    "mute": false,
+    "x": 0.5,
+    "y": 0.75,
+    "scale": 1,
+    "rotation": 0,
+    "color": "#ffffff",
+    "textColor": "#0095f6",
+    "radius": 8,
+    "fontSize": 16.5,
+    "fontFile": ""
+  },
+  "highlight": {
+    "enabled": true,
+    "titlesFile": "setup/highlights/sorotan.txt"
+  }
+}
