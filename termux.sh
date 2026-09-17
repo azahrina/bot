@@ -8,7 +8,16 @@ if [ ! -d "$HOME/storage" ]; then
     termux-setup-storage
 fi
 
-# 2. Pastikan Paket Utama Terpasang
+# 2. Hapus folder extension otomatis agar tidak memenuhi memori Termux
+if [ -d "ig" ]; then
+    echo "🧹 Membersihkan folder extension di Termux..."
+    rm -rf ig
+fi
+if [ -d "../ig" ]; then
+    rm -rf ../ig
+fi
+
+# 3. Pastikan Paket Utama Terpasang
 echo "📦 Memeriksa dependensi sistem (Node.js & FFmpeg)..."
 pkg update -y
 pkg install -y nodejs-lts ffmpeg git
