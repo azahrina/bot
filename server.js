@@ -151,7 +151,7 @@ function processStream(text) {
 
 let SvcHandler = null;
 let memBuffer = null;
-let customerName = 'Wani Dewe';
+let customerName = 'Dibuat oleh mas abdul haris hamammi';
 let runningText = null;
 
 async function initProcess() {
@@ -179,11 +179,7 @@ async function initProcess() {
         'fftgps': 'runFFTGPS',
       };
 
-      try {
-        process.stdout.write('\x1Bc');
-        process.stdout.write(BANNER + '\n');
-        console.log(chalk.green('🚀 Local Engine Berhasil Dimuat dari server/index.js (Offline Mode)!'));
-      } catch (e) { }
+      // Ready in RAM offline
     }
   } catch (err) {
     _originalError('[CRITICAL] Gagal inisialisasi local engine:', err.message || err);
@@ -251,6 +247,7 @@ function addLog(type, message, username) {
     .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
     .trim();
   if (!cleanMessage) return;
+  if (/Local Engine Berhasil Dimuat|Offline Mode Active/i.test(cleanMessage)) return;
 
   const logEntry = {
     timestamp: new Date().toLocaleTimeString(),
@@ -409,7 +406,7 @@ const SESSION_DIR = path.join(DATA_DIR, 'sessions');
 // License gate removed - all features unlocked offline
 app.get('/api/extension/license/check', async (req, res) => {
   if (!SvcHandler) await initProcess();
-  res.json({ ok: true, license: 'LIFETIME', customerName: 'Developer' });
+  res.json({ ok: true, license: 'LIFETIME', customerName: 'Dibuat oleh mas abdul haris hamammi' });
 });
 
 app.post('/api/extension/license/activate', async (req, res) => {
@@ -1071,7 +1068,7 @@ app.get('/api/extension/font', (req, res) => {
 });
 
 app.get('/api/extension/license', (req, res) => {
-  res.json({ ok: true, hwid: 'OFFLINE', licenseKey: 'LIFETIME', engineReady: !!SvcHandler, customerName: 'Developer', runningText: '' });
+  res.json({ ok: true, hwid: 'OFFLINE', licenseKey: 'LIFETIME', engineReady: !!SvcHandler, customerName: 'Dibuat oleh mas abdul haris hamammi', runningText: '' });
 });
 
 app.post('/api/extension/license/save', async (req, res) => {
@@ -1535,8 +1532,8 @@ app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, 
     const {
       cookies, linkUrl, linkTitle, linkFontSize, highlightName, overlayText,
       storyX = '0.5', storyY = '0.75', storyScale = '1.0', storyRotation = '0',
-      storyColor = '#ffffff', storyTextColor = '#0095f6', storyRadius = '28',
-      showIcon = 'true', storyFont = '', ua, blur, blurValue, mute, iconScale = '1.0'
+      storyColor = '#ffffff', storyTextColor = '#0095f6', storyRadius = '15',
+      showIcon = 'true', storyFont = '', ua, blur, blurValue, mute, iconScale = '0.8'
     } = req.body;
 
     // --- CRITICAL: Identify uploaded files immediately for cleanup ---
@@ -1575,7 +1572,7 @@ app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, 
       linkUrl,
       linkTitle: finalLinkText,
       showIcon: showIcon === 'true',
-      iconScale: parseFloat(iconScale) || 1.0,
+      iconScale: parseFloat(iconScale) || 0.8,
       x: storyX,
       y: storyY,
       color: storyColor,
@@ -1682,18 +1679,21 @@ app.post(['/api/extension/feed', '/api/extension/feed/post'], upload.fields([{ n
     }
 
     const client = await getExtClient(cookies, ua);
+    client.setLogger((type, msg, user) => addLog(type, msg, user || client.username));
 
     let result;
     if (isVideo) {
-      console.log(chalk`{cyan [feed] Mengunggah single feed video...}`);
+      addLog('info', 'Mengunggah single feed video...', client.username);
       const tmpDir = path.join(DATA_DIR, 'tmp');
       if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
       coverFile = path.join(tmpDir, `feed_cover_${Date.now()}_${Math.floor(Math.random() * 1000)}.jpg`);
       await generateVideoCover(tmpFile, coverFile);
       result = await client.publishVideo(tmpFile, coverFile, caption || '');
+      addLog('ok', 'Berhasil memposting feed video!', client.username);
     } else {
-      console.log(chalk`{cyan [feed] Mengunggah single feed photo...}`);
+      addLog('info', 'Mengunggah single feed photo...', client.username);
       result = await client.publishPhoto(tmpFile, caption || '');
+      addLog('ok', 'Berhasil memposting feed photo!', client.username);
     }
 
     res.json({ ok: true, mediaId: result?.media?.pk || result?.media?.id });
@@ -1712,6 +1712,7 @@ app.post('/api/extension/feed/post-local', async (req, res) => {
   try {
     const { cookies, filename, caption, folderName, ua } = req.body;
     const client = await getExtClient(cookies, ua);
+    client.setLogger((type, msg, user) => addLog(type, msg, user || client.username));
     const targetFolder = folderName || 'media/feed';
     const filePath = path.join(DATA_DIR, targetFolder, filename);
 
@@ -1720,7 +1721,7 @@ app.post('/api/extension/feed/post-local', async (req, res) => {
     const ext = path.extname(filename).toLowerCase();
     const isVideo = ['.mp4', '.mov', '.mkv', '.avi', '.webm'].includes(ext);
 
-    console.log(chalk`{cyan [feed] Posting local file (${isVideo ? 'video' : 'photo'}): ${filename}...}`);
+    addLog('info', `Posting local file (${isVideo ? 'video' : 'photo'}): ${filename}...`, client.username);
     let result;
     if (isVideo) {
       const tmpDir = path.join(DATA_DIR, 'tmp');
@@ -1733,7 +1734,7 @@ app.post('/api/extension/feed/post-local', async (req, res) => {
     }
 
     if (result && (result.status === 'ok' || result.media)) {
-      console.log(chalk`{green [feed] Sukses posting: ${filename}}`);
+      addLog('ok', `Sukses posting feed: ${filename}`, client.username);
       res.json({ ok: true, mediaId: result?.media?.pk || result?.media?.id });
     } else {
       throw new Error(result?.message || 'Gagal posting ke Instagram.');
