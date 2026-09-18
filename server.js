@@ -1554,9 +1554,9 @@ app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, 
       type = 'video';
       // Convert to Instagram-compatible MP4
       convertedFile = rawVideoPath + '_converted.mp4';
-      addLog('info', `Mengonversi video ke MP4... (Blur=${blur === 'true'}, Mute=${mute === 'true'})`, client.username);
+      console.log(chalk`{cyan [story] Converting video to MP4... (Blur=${blur === 'true'}, Mute=${mute === 'true'})}`);
       await convertToMp4(rawVideoPath, convertedFile, { blur: blur === 'true', blurValue: parseInt(blurValue) || 20, mute: mute === 'true' });
-      addLog('info', `Konversi selesai. Mengunggah...`, client.username);
+      console.log(chalk`{cyan [story] Konversi selesai.}`);
     } else if (req.files['image'] && req.files['image'][0]) {
       type = 'photo';
     }
@@ -1683,17 +1683,19 @@ app.post(['/api/extension/feed', '/api/extension/feed/post'], upload.fields([{ n
 
     let result;
     if (isVideo) {
-      addLog('info', 'Mengunggah single feed video...', client.username);
+      addLog('info', '[feed] Mempersiapkan media feed...', client.username);
       const tmpDir = path.join(DATA_DIR, 'tmp');
       if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
       coverFile = path.join(tmpDir, `feed_cover_${Date.now()}_${Math.floor(Math.random() * 1000)}.jpg`);
       await generateVideoCover(tmpFile, coverFile);
+      addLog('info', '[feed] Mengunggah feed', client.username);
       result = await client.publishVideo(tmpFile, coverFile, caption || '');
-      addLog('ok', 'Berhasil memposting feed video!', client.username);
+      addLog('ok', '[feed] Berhasil diposting! ✨', client.username);
     } else {
-      addLog('info', 'Mengunggah single feed photo...', client.username);
+      addLog('info', '[feed] Mempersiapkan media feed...', client.username);
+      addLog('info', '[feed] Mengunggah feed', client.username);
       result = await client.publishPhoto(tmpFile, caption || '');
-      addLog('ok', 'Berhasil memposting feed photo!', client.username);
+      addLog('ok', '[feed] Berhasil diposting! ✨', client.username);
     }
 
     res.json({ ok: true, mediaId: result?.media?.pk || result?.media?.id });
@@ -1721,7 +1723,7 @@ app.post('/api/extension/feed/post-local', async (req, res) => {
     const ext = path.extname(filename).toLowerCase();
     const isVideo = ['.mp4', '.mov', '.mkv', '.avi', '.webm'].includes(ext);
 
-    addLog('info', `Posting local file (${isVideo ? 'video' : 'photo'}): ${filename}...`, client.username);
+    addLog('info', `[feed] Mengunggah feed: ${filename}`, client.username);
     let result;
     if (isVideo) {
       const tmpDir = path.join(DATA_DIR, 'tmp');
@@ -1734,7 +1736,7 @@ app.post('/api/extension/feed/post-local', async (req, res) => {
     }
 
     if (result && (result.status === 'ok' || result.media)) {
-      addLog('ok', `Sukses posting feed: ${filename}`, client.username);
+      addLog('ok', `[feed] Berhasil diposting! ✨`, client.username);
       res.json({ ok: true, mediaId: result?.media?.pk || result?.media?.id });
     } else {
       throw new Error(result?.message || 'Gagal posting ke Instagram.');
