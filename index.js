@@ -265,7 +265,6 @@ PublishService.prototype.uploadAndConfigureStoryVideo = async function (options,
 
     const log = (msg) => {
         console.log(chalk`{cyan [story]} ${msg}`);
-        if (options.extLogger) options.extLogger('info', `[story] ${msg}`);
     };
 
     const originalRequest = this.client.request.send.bind(this.client.request);
@@ -336,6 +335,7 @@ PublishService.prototype.uploadAndConfigureStoryVideo = async function (options,
         // ===== PHASE 2: UPLOAD VIDEO CHUNKS =====
         const isDirectStory = (configureOptions && configureOptions.configure_mode === '2') || (options.configure_mode === '2');
         log(`[P2] Mengunggah video chunks... isDirectStory=${isDirectStory} uploadId=${uploadId}`);
+        if (options.extLogger) options.extLogger('info', 'Mengunggah video');
         const videoBuffer = require('fs').readFileSync(options.video);
 
         const custom_regularVideo = async (client, buffer, upload_id) => {
@@ -398,6 +398,7 @@ PublishService.prototype.uploadAndConfigureStoryVideo = async function (options,
 
         // ===== PHASE 5: INDEXING WAIT =====
         log(`[P5] Menunggu indexing 20s...`);
+        if (options.extLogger) options.extLogger('info', 'Menunggu');
         await new Promise(r => setTimeout(r, 20000));
 
         // ===== PHASE 6: CONFIGURE STORY =====
@@ -1163,7 +1164,9 @@ class instagram {
                 fontPath = path.join(fontsDir, defaultFontFile);
             } else if (fs.existsSync(fontsDir)) {
                 const availableFontsList = fs.readdirSync(fontsDir).filter(f => f.toLowerCase().endsWith(".ttf") || f.toLowerCase().endsWith(".otf"));
-                if (availableFontsList.length > 0) fontPath = path.join(fontsDir, availableFontsList[0]);
+                const condensedFont = availableFontsList.find(f => f.toLowerCase().includes("condensed") && !f.toLowerCase().includes("bold"));
+                if (condensedFont) fontPath = path.join(fontsDir, condensedFont);
+                else if (availableFontsList.length > 0) fontPath = path.join(fontsDir, availableFontsList[0]);
             }
 
             if (fontPath && fs.existsSync(fontPath)) {
@@ -1429,13 +1432,18 @@ class instagram {
 
             const fontsDir = path.join(__dirname, 'fonts');
             let fontPath = null;
-            const defaultFontFile = "Instagram Sans Condensed Bold.ttf";
+            const defaultFontFile = "Instagram Sans Condensed.ttf";
             if (requestedFontParam && fs.existsSync(requestedFontParam)) {
                 fontPath = requestedFontParam;
             } else if (requestedFontParam && fs.existsSync(path.join(fontsDir, requestedFontParam))) {
                 fontPath = path.join(fontsDir, requestedFontParam);
             } else if (fs.existsSync(path.join(fontsDir, defaultFontFile))) {
                 fontPath = path.join(fontsDir, defaultFontFile);
+            } else if (fs.existsSync(fontsDir)) {
+                const availableFontsList = fs.readdirSync(fontsDir).filter(f => f.toLowerCase().endsWith(".ttf") || f.toLowerCase().endsWith(".otf"));
+                const condensedFont = availableFontsList.find(f => f.toLowerCase().includes("condensed") && !f.toLowerCase().includes("bold"));
+                if (condensedFont) fontPath = path.join(fontsDir, condensedFont);
+                else if (availableFontsList.length > 0) fontPath = path.join(fontsDir, availableFontsList[0]);
             }
 
             if (fontPath && fs.existsSync(fontPath)) {
@@ -1831,8 +1839,9 @@ class instagram {
                 };
 
 
-                print("Mempersiapkan media...", "wait");
+                print("Mempersiapkan foto", "wait");
                 const waterfallId = require("chance").Chance().guid({ version: 4 });
+                print("Mengunggah foto", "info");
                 const uploadResponse = await this.ig.upload.photo({
                     file: storyOptions.file,
                     uploadId: uniqueUploadId,
@@ -1849,10 +1858,10 @@ class instagram {
                 }
 
                 // Wait briefly for Instagram upload indexing
-                print(`Media terupload (ID: ${finalUploadId}). Tahap 2: Menunggu 3s untuk indexing...`, "info");
+                print("Menunggu", "wait");
                 await new Promise(r => setTimeout(r, 3000));
 
-                print("Tahap 3: Konfigurasi story...", "info");
+                console.log(chalk`{cyan [story] Konfigurasi story...}`);
                 let lastErr;
                 const consistentClientContext = require("chance").Chance().guid({ version: 4 });
                 for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1899,7 +1908,7 @@ class instagram {
                 };
 
 
-                print(`Mempersiapkan upload video: ${path.basename(videoFilePath)}`, "wait");
+                print("Mempersiapkan upload video", "wait");
 
                 // 1. Generate Cover (Poster Frame)
                 // Generate Video Cover using isolated workArea
@@ -1918,7 +1927,7 @@ class instagram {
                     });
                     if (fs.existsSync(coverPath)) {
                         if (options.blur) {
-                            log(`[story] Applying full frame blur to cover image to match video style...`);
+                            console.log(chalk`{cyan [story] Applying full frame blur to cover image...}`);
                             const cover = await Jimp.read(coverPath);
                             // Match the video style: Scale to fill (1080x1920) and blur the whole frame
                             cover.cover({ w: 1080, h: 1920 }).blur(parseInt(options.blurValue) || 20);
@@ -1930,8 +1939,6 @@ class instagram {
                         const shortProv = this.config?.story?.shortlinkProvider;
                         if (linkUrl && shortProv && shortProv !== 'none') {
                             try {
-                                print(`Mengenerate shortlink menggunakan provider: ${shortProv.toUpperCase()}...`, 'wait');
-                                // Try to use server's shortlink API if reachable, otherwise skip
                                 const port = process.env.PORT || 7500;
                                 const shortRes = await axios.post(`http://127.0.0.1:${port}/api/extension/shortlink`, {
                                     provider: shortProv,
@@ -1941,26 +1948,25 @@ class instagram {
 
                                 if (shortRes && shortRes.data && shortRes.data.ok && shortRes.data.shortUrl) {
                                     linkUrl = shortRes.data.shortUrl;
-                                    print(`Shortlink Berhasil: ${linkUrl}`, 'ok');
                                 }
                             } catch (e) { }
                         }
                     }
                 } catch (e) {
-                    log(`⚠️ Gagal generate cover: ${e.message}`);
+                    console.warn(`[story] ⚠️ Gagal generate cover: ${e.message}`);
                 }
 
                 // 2. "COOK" VIDEO (Blur & Sticker) in isolated workArea
                 const cookedVideoPath = path.join(workArea, `${path.basename(videoFilePath)}_cooked.mp4`);
                 cleanupFiles.push(cookedVideoPath);
-                print(`Memproses video (Blur & Stickers)...`, "wait");
+                print("Memproses video...", "wait");
                 try {
                     const ffmpeg = require('fluent-ffmpeg');
                     ffmpeg.setFfmpegPath(getFFmpegPath()); // Set ffmpeg path for fluent-ffmpeg
                     // Generate Pure Sticker PNG for overlay (No background image)
                     let stickerPngPath = null;
                     if (linkTitle) {
-                        print(`Menyiapkan overlay stiker...`, "wait");
+                        console.log(chalk`{cyan [story] Menyiapkan overlay stiker...}`);
                         // Reuse the stickerInfo generated earlier
                         const stickerInfo = stickerInfoForVideo || await this.processStorySticker(linkTitle, options);
                         stickerPngPath = stickerInfo.path;
