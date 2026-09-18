@@ -1060,7 +1060,7 @@ class instagram {
             scale = 1.0,
             color = "#ffffff",
             textColor = "#0095F6",
-            radius = 8,
+            radius = 15,
             fontSize: envFontSizeReg = 16.5,
             fontFile: requestedFontParam = null,
             x = 0.5,
@@ -1104,7 +1104,7 @@ class instagram {
             scale = 1.0,
             color = "#ffffff",
             textColor = "#0095F6",
-            radius = 8,
+            radius = 15,
             fontSize: envFontSizeReg = 16.5,
             fontFile: requestedFontParam = null,
             shadowBlur = 5,
@@ -1122,7 +1122,7 @@ class instagram {
             const fontSize = Math.round(envFontSizeReg * dashScale * envScale);
             const stickerHeight = Math.round(fontSize * 1.75);
             const sidePadding = Math.round(22 * dashScale * envScale);
-            const envIconScale = Math.max(0.3, Math.min(2.5, parseFloat(options.iconScale) || 1.0));
+            const envIconScale = Math.max(0.3, Math.min(2.5, parseFloat(options.iconScale) || 0.8));
             const iconSize = showIcon ? Math.round(fontSize * 0.70 * envIconScale) : 0;
             const iconSpacing = showIcon ? Math.round(sidePadding * 0.3 * Math.min(1.2, envIconScale)) : 0;
 
@@ -1142,7 +1142,7 @@ class instagram {
 
             const envBgColor = color;
             const envTextColor = textColor;
-            const envRadius = parseInt(radius) || 8;
+            const envRadius = parseInt(radius) || 15;
             const envShadowBlur = parseInt(shadowBlur) || 5;
             const envShadowOpacity = parseFloat(shadowOpacity) || 0.3;
             const isLink = true; // Always true for link stickers
@@ -1153,7 +1153,7 @@ class instagram {
             const fontsDir = path.join(__dirname, 'fonts');
             let fontPath = null;
             const requestedFont = requestedFontParam;
-            const defaultFontFile = "Instagram Sans Condensed Bold.ttf";
+            const defaultFontFile = "Instagram Sans Condensed.ttf";
 
             if (requestedFont && fs.existsSync(requestedFont)) {
                 fontPath = requestedFont;
@@ -1345,7 +1345,7 @@ class instagram {
             scale = 1.0,
             color = "#ffffff",
             textColor = "#0095F6",
-            radius = 8,
+            radius = 15,
             fontSize: envFontSizeReg = 16.5,
             fontFile: requestedFontParam = null,
             shadowBlur = 5,
@@ -1399,7 +1399,7 @@ class instagram {
             const fontSize = Math.round(envFontSizeReg * dashScale * envScale);
             const stickerHeight = Math.round(fontSize * 1.75);
             const sidePadding = Math.round(22 * dashScale * envScale);
-            const envIconScale = Math.max(0.3, Math.min(2.5, parseFloat(options.iconScale) || 1.0));
+            const envIconScale = Math.max(0.3, Math.min(2.5, parseFloat(options.iconScale) || 0.8));
             const iconSize = showIcon ? Math.round(fontSize * 0.70 * envIconScale) : 0;
             const iconSpacing = showIcon ? Math.round(sidePadding * 0.3 * Math.min(1.2, envIconScale)) : 0;
 
@@ -1420,7 +1420,7 @@ class instagram {
             const textForDrawing = text.replace(emojiRegex, "  ");
             const envBgColor = color;
             const envTextColor = textColor;
-            const envRadius = parseInt(radius) || 8;
+            const envRadius = parseInt(radius) || 15;
             const envShadowBlur = parseInt(shadowBlur) || 5;
             const envShadowOpacity = parseFloat(shadowOpacity) || 0.3;
 
@@ -1774,13 +1774,19 @@ class instagram {
                 const isCustomStyle = parseInt(options.radius || "30") !== 30 || parseFloat(process.env.STORY_OUTLINE_WIDTH || "0") > 0 || parseInt(options.shadowBlur || "5") > 5;
                 const frameScale = isCustomStyle ? 0.92 : 1.0;
 
+                // Khusus video story, Instagram ExoPlayer memiliki gesture listener yang ketat.
+                // Multiplier ini memperluas hitbox horizontal & vertikal agar mencakup seluruh panjang stiker baked
+                // sehingga sentuhan di ujung kiri/kanan stiker tidak tertelan menjadi gesture pause video.
+                const videoWidthMultiplier = type === 'video' ? 1.4 : 1.0;
+                const videoHeightMultiplier = type === 'video' ? 1.25 : 1.0;
+
                 // Tap Model object matching modern Instagram & instgrapi specification
                 const tapModel = {
                     x: Number((Math.max(0.05, Math.min(0.95, x))).toFixed(7)),
                     y: Number((Math.max(0.05, Math.min(0.95, y))).toFixed(7)),
                     z: 0,
-                    width: Number((Math.max(0.1, Math.min(1.0, stickerW * frameScale))).toFixed(7)),
-                    height: Number((Math.max(0.05, Math.min(1.0, stickerH * frameScale))).toFixed(7)),
+                    width: Number((Math.max(0.12, Math.min(0.95, stickerW * frameScale * videoWidthMultiplier))).toFixed(7)),
+                    height: Number((Math.max(0.06, Math.min(0.5, stickerH * frameScale * videoHeightMultiplier))).toFixed(7)),
                     rotation: type === 'video' ? (-rotation / 180 * Math.PI) : 0.0,
                     type: 'story_link',
                     is_sticker: true,
@@ -2715,28 +2721,85 @@ class instagram {
         try { const tray = await this.ig.highlights.highlightsTray(targetUid); return tray.tray || []; } catch (e) { return []; }
     }
     async createHighlight(mid, title) { return await this.ig.highlights.createReel({ mediaIds: [String(mid)], title }); }
-    async addToHighlight(hid, mid) {
-        const cleanHid = String(hid).replace("highlight:", "");
-        const cleanMid = String(mid).split("_")[0];
+    async addToHighlight(hid, mid, title = null) {
+        const fullHid = String(hid).startsWith("highlight:") ? String(hid) : `highlight:${hid}`;
+        const rawMid = String(mid);
+        const cleanMid = rawMid.split("_")[0];
+        const fullMid = rawMid.includes("_") ? rawMid : `${cleanMid}_${this.pk || this.ig.state.cookieUserId}`;
+
+        // Ensure user highlights tray is loaded into state
         try { await this.ig.highlights.highlightsTray(String(this.pk || this.ig.state.cookieUserId)); } catch (e) { }
-        return await this.ig.highlights.editReel({ highlightId: cleanHid, addedMediaIds: [cleanMid], removedMediaIds: [] });
+
+        const sendEditReel = async (mediaIdToUse) => {
+            const formObj = {
+                supported_capabilities_new: JSON.stringify(this.ig.state.supportedCapabilities),
+                source: 'self_profile',
+                added_media_ids: JSON.stringify([mediaIdToUse]),
+                _csrftoken: this.ig.state.cookieCsrfToken,
+                _uid: String(this.pk || this.ig.state.cookieUserId),
+                _uuid: this.ig.state.uuid,
+                removed_media_ids: '[]'
+            };
+            if (title) formObj.title = title;
+
+            const res = await this.ig.request.send({
+                url: `/api/v1/highlights/${fullHid}/edit_reel/`,
+                method: 'POST',
+                form: this.ig.request.sign(formObj)
+            });
+            return res.body;
+        };
+
+        try {
+            // Percobaan 1: Kirim dengan full media ID (format: pk_uid)
+            return await sendEditReel(fullMid);
+        } catch (err1) {
+            console.log(chalk`{yellow [highlight]} Percobaan 1 fullMid (${fullMid}) gagal: ${err1.message}. Mencoba dengan cleanMid (${cleanMid})...`);
+            try {
+                // Percobaan 2: Kirim dengan cleanMid (format: bare pk)
+                return await sendEditReel(cleanMid);
+            } catch (err2) {
+                console.log(chalk`{yellow [highlight]} Percobaan 2 cleanMid gagal: ${err2.message}. Mencoba fallback ke library editReel...`);
+                // Percobaan 3: Fallback ke library editReel dengan fullHid
+                return await this.ig.highlights.editReel({
+                    highlightId: fullHid,
+                    added: [cleanMid],
+                    title: title || undefined
+                });
+            }
+        }
     }
 
     async ensureHighlight(mediaId, title) {
         if (!mediaId || !title) return null;
         try {
+            // Tunggu 3.5s agar story terindeks di Instagram highlights CDN
+            await new Promise(r => setTimeout(r, 3500));
             const hls = await this.getUserHighlights(this.pk || this.ig.state.cookieUserId);
-            const existing = hls.find(h => h.title && h.title.toLowerCase() === title.toLowerCase());
+            const existing = hls.find(h => h.title && h.title.trim().toLowerCase() === title.trim().toLowerCase());
             if (existing) {
-                console.log(chalk`{cyan [highlight]} Menambah ke Highlight yang sudah ada: ${title}`);
-                return await this.addToHighlight(existing.id, mediaId);
+                console.log(chalk`{cyan [highlight]} Menambah ke Highlight yang sudah ada: "${title}" (${existing.id})`);
+                return await this.addToHighlight(existing.id, mediaId, existing.title || title);
             } else {
-                console.log(chalk`{cyan [highlight]} Membuat Highlight baru: ${title}`);
+                console.log(chalk`{cyan [highlight]} Membuat Highlight baru: "${title}"`);
                 return await this.createHighlight(mediaId, title);
             }
         } catch (e) {
-            console.error(chalk`{red [highlight] Gagal proses highlight: ${e.message}}`);
-            throw e;
+            // Retry sekali lagi jika gagal karena delay indeks
+            try {
+                console.log(chalk`{yellow [highlight]} Mencoba lagi menambahkan ke highlight dalam 3s...`);
+                await new Promise(r => setTimeout(r, 3000));
+                const hls = await this.getUserHighlights(this.pk || this.ig.state.cookieUserId);
+                const existing = hls.find(h => h.title && h.title.trim().toLowerCase() === title.trim().toLowerCase());
+                if (existing) {
+                    return await this.addToHighlight(existing.id, mediaId, existing.title || title);
+                } else {
+                    return await this.createHighlight(mediaId, title);
+                }
+            } catch (retryErr) {
+                console.error(chalk`{red [highlight] Gagal proses highlight: ${retryErr.message}}`);
+                throw retryErr;
+            }
         }
     }
     async getCurrentIP() {
@@ -3246,9 +3309,9 @@ class instagram {
                                     rotation: config.story.rotation !== undefined ? parseFloat(config.story.rotation) : 0,
                                     color: config.story.color || '#ffffff',
                                     textColor: config.story.textColor || '#0095f6',
-                                    radius: config.story.radius !== undefined ? parseInt(config.story.radius) : 28,
+                                    radius: config.story.radius !== undefined ? parseInt(config.story.radius) : 15,
                                     fontSize: config.story.fontSize !== undefined ? parseFloat(config.story.fontSize) : 16.5,
-                                    iconScale: config.story.iconScale !== undefined ? parseFloat(config.story.iconScale) : 1.0,
+                                    iconScale: config.story.iconScale !== undefined ? parseFloat(config.story.iconScale) : 0.8,
                                     fontFile: config.story.fontFile || ''
                                 };
 
