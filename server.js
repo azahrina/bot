@@ -1715,7 +1715,12 @@ app.post('/api/extension/feed/post-local', async (req, res) => {
     const { cookies, filename, caption, folderName, ua } = req.body;
     const client = await getExtClient(cookies, ua);
     client.setLogger((type, msg, user) => addLog(type, msg, user || client.username));
-    const targetFolder = folderName || 'media/feed';
+    let targetFolder = folderName || 'media/feed';
+    let baseDir = path.join(DATA_DIR, targetFolder);
+    const autoFeedDir = path.join(baseDir, 'feed');
+    if (fs.existsSync(autoFeedDir) && fs.lstatSync(autoFeedDir).isDirectory()) {
+      targetFolder = path.join(targetFolder, 'feed').replace(/\\/g, '/');
+    }
     const filePath = path.join(DATA_DIR, targetFolder, filename);
 
     if (!fs.existsSync(filePath)) throw new Error(`File tidak ditemukan: ${targetFolder}/${filename}`);
@@ -1845,17 +1850,36 @@ app.post('/api/extension/profile/pic', upload.single('image'), async (req, res) 
 
 // Bulk Feed Info (Using consolidated endpoints)
 app.get('/api/extension/feed/bulk-info', (req, res) => {
-  const folderName = req.query.folderName || 'media/feed';
+  let folderName = req.query.folderName || 'media/feed';
   const captionFile = req.query.captionFile;
+  const mediaType = req.query.mediaType || 'all';
 
-  const feedDir = path.join(DATA_DIR, folderName);
-  const images = fs.existsSync(feedDir) ? fs.readdirSync(feedDir).filter(f => /\.(jpg|jpeg|png|webp|mp4|mov|mkv)$/i.test(f) && !f.includes('_unique_') && !f.includes('_converted') && !f.includes('_cover')) : [];
+  let feedDir = path.join(DATA_DIR, folderName);
+  const autoFeedDir = path.join(feedDir, 'feed');
+  if (fs.existsSync(autoFeedDir) && fs.lstatSync(autoFeedDir).isDirectory()) {
+    feedDir = autoFeedDir;
+    folderName = path.join(folderName, 'feed').replace(/\\/g, '/');
+  }
+
+  let images = [];
+  if (fs.existsSync(feedDir)) {
+    images = fs.readdirSync(feedDir).filter(f => {
+      if (f.includes('_unique_') || f.includes('_converted') || f.includes('_cover')) return false;
+      const ext = path.extname(f).toLowerCase();
+      const isPhoto = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext);
+      const isVideo = ['.mp4', '.mov', '.mkv', '.avi', '.webm'].includes(ext);
+      if (mediaType === 'photo') return isPhoto;
+      if (mediaType === 'video') return isVideo;
+      return isPhoto || isVideo;
+    });
+  }
+
   let captions = [];
   if (captionFile) {
     const capFile = path.join(DATA_DIR, captionFile);
     if (fs.existsSync(capFile)) captions = fs.readFileSync(capFile, 'utf8').split('|').map(l => l.trim()).filter(l => l.length > 0);
   }
-  res.json({ ok: true, images, captions });
+  res.json({ ok: true, images, captions, resolvedFolder: folderName });
 });
 
 app.get('/api/extension/feed/bulk-progress', (req, res) => {
