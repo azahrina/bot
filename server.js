@@ -1625,17 +1625,23 @@ app.post('/api/extension/logs/clear', (req, res) => {
   res.json({ ok: true });
 });
 
+// In-memory cache for converted batch videos across multi-account story posts
+const storyBatchVideoCache = new Map();
+
 // ---- Multimedia (Story & Feed) --------------------------
 app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req, res) => {
   let tmpFile = null;
   let convertedFile = null;
+  let batchId = null;
   try {
     const {
       cookies, linkUrl, linkTitle, linkFontSize, highlightName, overlayText,
       storyX = '0.5', storyY = '0.75', storyScale = '1.0', storyRotation = '0',
       storyColor = '#ffffff', storyTextColor = '#0095f6', storyRadius = '15',
-      showIcon = 'true', storyFont = '', ua, blur, blurValue, mute, iconScale = '0.8'
+      showIcon = 'true', storyFont = '', ua, blur, blurValue, mute, iconScale = '0.8',
+      totalAccounts, accountIndex
     } = req.body;
+    batchId = req.body.batchId || null;
 
     // --- CRITICAL: Identify uploaded files immediately for cleanup ---
     if (req.files) {
@@ -1653,11 +1659,49 @@ app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, 
     if (req.files['video'] && req.files['video'][0]) {
       const rawVideoPath = req.files['video'][0].path;
       type = 'video';
-      // Convert to Instagram-compatible MP4
-      convertedFile = rawVideoPath + '_converted.mp4';
-      console.log(chalk`{cyan [story] Converting video to MP4... (Blur=${blur === 'true'}, Mute=${mute === 'true'})}`);
-      await convertToMp4(rawVideoPath, convertedFile, { blur: blur === 'true', blurValue: parseInt(blurValue) || 20, mute: mute === 'true' });
-      console.log(chalk`{cyan [story] Konversi selesai.}`);
+
+      if (batchId) {
+        let cache = storyBatchVideoCache.get(batchId);
+        if (!cache) {
+          const cacheConvertedFile = rawVideoPath + '_batch_converted.mp4';
+          const total = parseInt(totalAccounts) || 1;
+
+          const convertPromise = (async () => {
+            console.log(chalk`{cyan [story-batch] Mengonversi shared video sekali untuk batch ${batchId}... (Blur=${blur === 'true'}, Mute=${mute === 'true'})}`);
+            await convertToMp4(rawVideoPath, cacheConvertedFile, {
+              blur: blur === 'true',
+              blurValue: parseInt(blurValue) || 20,
+              mute: mute === 'true'
+            });
+            console.log(chalk`{cyan [story-batch] Konversi shared video selesai.}`);
+            return cacheConvertedFile;
+          })();
+
+          const timer = setTimeout(() => {
+            if (fs.existsSync(cacheConvertedFile)) {
+              try { fs.unlinkSync(cacheConvertedFile); } catch (e) {}
+            }
+            storyBatchVideoCache.delete(batchId);
+          }, 5 * 60 * 1000);
+
+          cache = {
+            filePath: cacheConvertedFile,
+            remaining: total,
+            total,
+            convertPromise,
+            timer
+          };
+          storyBatchVideoCache.set(batchId, cache);
+        }
+
+        convertedFile = await cache.convertPromise;
+      } else {
+        // Single non-batch conversion
+        convertedFile = rawVideoPath + '_converted.mp4';
+        console.log(chalk`{cyan [story] Converting video to MP4... (Blur=${blur === 'true'}, Mute=${mute === 'true'})}`);
+        await convertToMp4(rawVideoPath, convertedFile, { blur: blur === 'true', blurValue: parseInt(blurValue) || 20, mute: mute === 'true' });
+        console.log(chalk`{cyan [story] Konversi selesai.}`);
+      }
     } else if (req.files['image'] && req.files['image'][0]) {
       type = 'photo';
     }
@@ -1718,10 +1762,25 @@ app.post('/api/extension/story', upload.fields([{ name: 'image', maxCount: 1 }, 
     console.error(chalk`{red [story] Error: ${e.message}}`);
     res.status(400).json({ ok: false, error: e.message });
   } finally {
-
     // Robust cleanup in finally block
     if (tmpFile && fs.existsSync(tmpFile)) { try { fs.unlinkSync(tmpFile); } catch (e) { } }
-    if (convertedFile && fs.existsSync(convertedFile)) { try { fs.unlinkSync(convertedFile); } catch (e) { } }
+
+    if (batchId && storyBatchVideoCache.has(batchId)) {
+      const cache = storyBatchVideoCache.get(batchId);
+      cache.remaining--;
+      if (cache.remaining <= 0) {
+        clearTimeout(cache.timer);
+        if (cache.filePath && fs.existsSync(cache.filePath)) {
+          try {
+            fs.unlinkSync(cache.filePath);
+            console.log(chalk`{cyan [story-batch] Seluruh akun batch ${batchId} selesai, cache video berhasil dihapus bersih.}`);
+          } catch (e) { }
+        }
+        storyBatchVideoCache.delete(batchId);
+      }
+    } else {
+      if (convertedFile && fs.existsSync(convertedFile)) { try { fs.unlinkSync(convertedFile); } catch (e) { } }
+    }
   }
 });
 
