@@ -1387,16 +1387,96 @@ app.post('/api/extension/user/feed', async (req, res) => {
   }
 });
 
+// Helper Auto-detect Target: URL Post, Shortcode, Media ID, atau Akun
+function parsePostOrAccount(target) {
+  if (!target) return { type: 'unknown' };
+  const s = String(target).trim();
+
+  // 1. Direct Media PK (numeric 15+ digits)
+  if (/^\d{15,}$/.test(s)) {
+    return { type: 'post', mediaId: s, raw: s };
+  }
+  // 2. Post / Reel / TV / Share URL
+  const urlMatch = s.match(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?:p|reels?|tv|share\/p)\/([a-zA-Z0-9_-]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    return { type: 'post', shortcode: urlMatch[1], raw: s };
+  }
+  // 3. Shortcode with explicit prefix: p/CODE, reel/CODE, post/CODE, sc:CODE
+  const prefixMatch = s.match(/^(?:p|reels?|tv|post|sc)[\/:\s]+([a-zA-Z0-9_-]+)$/i);
+  if (prefixMatch && prefixMatch[1]) {
+    return { type: 'post', shortcode: prefixMatch[1], raw: s };
+  }
+  // 4. Shortcode containing hyphen '-' (impossible in IG usernames)
+  if (s.includes('-') && /^[a-zA-Z0-9_-]{8,15}$/.test(s)) {
+    return { type: 'post', shortcode: s, raw: s };
+  }
+  // 5. Profile URL: instagram.com/username
+  const profMatch = s.match(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/([a-zA-Z0-9_.]+)/i);
+  if (profMatch && profMatch[1] && !['p', 'reel', 'reels', 'explore', 'stories', 'tv', 'share'].includes(profMatch[1].toLowerCase())) {
+    return { type: 'account', account: profMatch[1], raw: s };
+  }
+  // 6. Explicit @username
+  if (s.startsWith('@')) {
+    return { type: 'account', account: s.replace(/^@+/, ''), raw: s };
+  }
+  // 7. Fallback: account (username or user UUID)
+  return { type: 'account', account: s, raw: s };
+}
+
 // ---- Like Runner Endpoints ----
 app.post('/api/extension/like/post', async (req, res) => {
   try {
-    const { cookies, ua, target } = req.body;
+    const { cookies, ua, target, mediaId } = req.body;
     const client = await getExtClient(cookies, ua);
 
-    let userId = target;
-    // Jika input bukan angka (ID), maka cari ID berdasarkan username
-    if (!/^\d+$/.test(target)) {
-      userId = await client.ig.user.getIdByUsername(target);
+    // 1. Cek apakah ada mediaId langsung atau target berupa Postingan (URL / Shortcode)
+    let parsed = mediaId ? { type: 'post', mediaId: String(mediaId) } : parsePostOrAccount(target);
+
+    if (parsed.type === 'post') {
+      let targetMediaId = parsed.mediaId;
+      if (!targetMediaId && parsed.shortcode) {
+        targetMediaId = await client.getMediaIdByUrl(parsed.shortcode);
+      }
+      if (!targetMediaId) throw new Error('Gagal mengonversi target postingan ke Media ID');
+
+      addLog('info', `[Like] Like direct post: ${targetMediaId} (target: ${parsed.shortcode || targetMediaId})`);
+      try {
+        await client.like(targetMediaId);
+      } catch (likeErr) {
+        // Fallback ke client.ig.media.like jika direct API gagal
+        await client.ig.media.like({
+          mediaId: targetMediaId,
+          moduleInfo: { module_name: 'feed_shortform' },
+          d: 0,
+        });
+      }
+
+      return res.json({ ok: true, mediaId: targetMediaId, shortcode: parsed.shortcode || targetMediaId, isDirectPost: true });
+    }
+
+    // 2. Jika akun (Username / User UUID)
+    let userId = parsed.account || target;
+    if (!/^\d+$/.test(userId)) {
+      try {
+        userId = await client.ig.user.getIdByUsername(userId);
+      } catch (uErr) {
+        // Cek jika username ternyata sebuah raw shortcode (9-15 char alphanumeric)
+        if (/^[a-zA-Z0-9_-]{9,15}$/.test(target)) {
+          addLog('info', `[Like] Target '${target}' bukan akun, mencoba resolusi sebagai Shortcode post...`);
+          try {
+            const fallbackMediaId = await client.getMediaIdByUrl(target);
+            if (fallbackMediaId) {
+              try {
+                await client.like(fallbackMediaId);
+              } catch (err2) {
+                await client.ig.media.like({ mediaId: fallbackMediaId, moduleInfo: { module_name: 'feed_shortform' }, d: 0 });
+              }
+              return res.json({ ok: true, mediaId: fallbackMediaId, shortcode: target, isDirectPost: true });
+            }
+          } catch (scErr) { }
+        }
+        throw uErr;
+      }
     }
 
     const userFeed = client.ig.feed.user(userId);
@@ -1409,17 +1489,21 @@ app.post('/api/extension/like/post', async (req, res) => {
     // Urutkan postingan berdasarkan waktu upload terbaru (taken_at)
     const sorted = [...page].sort((a, b) => (b.taken_at || 0) - (a.taken_at || 0));
     const latestPost = sorted[0];
-    await client.ig.media.like({
-      mediaId: latestPost.pk,
-      moduleInfo: {
-        module_name: 'profile',
-        user_id: userId,
-        username: latestPost.user.username,
-      },
-      d: 0,
-    });
+    try {
+      await client.like(latestPost.pk);
+    } catch (e1) {
+      await client.ig.media.like({
+        mediaId: latestPost.pk,
+        moduleInfo: {
+          module_name: 'profile',
+          user_id: userId,
+          username: latestPost.user ? latestPost.user.username : undefined,
+        },
+        d: 0,
+      });
+    }
 
-    res.json({ ok: true, mediaId: latestPost.pk, shortcode: latestPost.code });
+    res.json({ ok: true, mediaId: latestPost.pk, shortcode: latestPost.code, username: latestPost.user ? latestPost.user.username : undefined });
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
   }
@@ -1461,15 +1545,28 @@ app.post('/api/extension/media/comments', async (req, res) => {
 
 app.post('/api/extension/media/comment', async (req, res) => {
   try {
-    const { cookies, ua, mediaId, text, replyToCommentId } = req.body;
+    const { cookies, ua, mediaId, text, replyToCommentId, target } = req.body;
     // Strip BOM and whitespace, convert to ASCII-safe string
     const cleanText = (text || '').replace(/^\uFEFF/, '').trim();
     if (!cleanText) return res.status(400).json({ ok: false, error: 'Teks komentar tidak boleh kosong.' });
-    if (!mediaId) return res.status(400).json({ ok: false, error: 'mediaId tidak boleh kosong.' });
-    addLog('info', `[Comment] Kirim ke media ${mediaId}: "${cleanText.substring(0, 30)}"`);
+
     const client = await getExtClient(cookies, ua);
-    const result = await client.comment(mediaId, cleanText, replyToCommentId);
-    res.json({ ok: true, comment: result });
+    let resolvedMediaId = mediaId;
+    if (!resolvedMediaId && target) {
+      const parsed = parsePostOrAccount(target);
+      if (parsed.type === 'post') {
+        resolvedMediaId = parsed.mediaId || (await client.getMediaIdByUrl(parsed.shortcode || target));
+      } else if (/^[a-zA-Z0-9_-]{9,15}$/.test(target)) {
+        try {
+          resolvedMediaId = await client.getMediaIdByUrl(target);
+        } catch (errSc) { }
+      }
+    }
+
+    if (!resolvedMediaId) return res.status(400).json({ ok: false, error: 'mediaId tidak boleh kosong.' });
+    addLog('info', `[Comment] Kirim ke media ${resolvedMediaId}: "${cleanText.substring(0, 30)}"`);
+    const result = await client.comment(resolvedMediaId, cleanText, replyToCommentId);
+    res.json({ ok: true, comment: result, mediaId: resolvedMediaId });
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message });
   }
