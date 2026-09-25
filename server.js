@@ -1410,16 +1410,20 @@ function parsePostOrAccount(target) {
   if (s.includes('-') && /^[a-zA-Z0-9_-]{8,15}$/.test(s)) {
     return { type: 'post', shortcode: s, raw: s };
   }
-  // 5. Profile URL: instagram.com/username
-  const profMatch = s.match(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/([a-zA-Z0-9_.]+)/i);
-  if (profMatch && profMatch[1] && !['p', 'reel', 'reels', 'explore', 'stories', 'tv', 'share'].includes(profMatch[1].toLowerCase())) {
-    return { type: 'account', account: profMatch[1], raw: s };
+  // 5. Standard shortcode: contains uppercase [A-Z], no dot '.', length 9-13 (IG usernames are lowercase only)
+  if (/[A-Z]/.test(s) && !s.includes('.') && /^[a-zA-Z0-9_-]{9,13}$/.test(s)) {
+    return { type: 'post', shortcode: s, raw: s };
   }
   // 6. Explicit @username
   if (s.startsWith('@')) {
     return { type: 'account', account: s.replace(/^@+/, ''), raw: s };
   }
-  // 7. Fallback: account (username or user UUID)
+  // 7. Profile URL: instagram.com/username
+  const profMatch = s.match(/(?:https?:\/\/)?(?:www\.)?instagram\.com\/([a-zA-Z0-9_.]+)/i);
+  if (profMatch && profMatch[1] && !['p', 'reel', 'reels', 'explore', 'stories', 'tv', 'share'].includes(profMatch[1].toLowerCase())) {
+    return { type: 'account', account: profMatch[1], raw: s };
+  }
+  // 8. Fallback: account (username or user UUID)
   return { type: 'account', account: s, raw: s };
 }
 
