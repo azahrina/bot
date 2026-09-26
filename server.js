@@ -764,7 +764,17 @@ app.post('/api/extension/task/start', async (req, res) => {
           activeRAMTasks.set(taskKey, ig); // Register for Stop button
 
           if (typeof ig.setLogger === 'function') ig.setLogger((type, msg, user) => addLog(type, msg, user || username));
-          await ig.loginWithExtensionSession(false, true, session);
+
+          // Ensure session object has valid _cookies array and ua
+          let safeSession = session ? { ...session } : {};
+          if (safeSession.cookies && (!safeSession._cookies || safeSession._cookies.length === 0)) {
+            safeSession._cookies = parseCookiesToArray(safeSession.cookies);
+          }
+          if (!safeSession.ua) {
+            safeSession.ua = 'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36';
+          }
+
+          await ig.loginWithExtensionSession(false, true, safeSession);
 
           // Merge configuration
           const taskConfig = { ...(env || {}), ...(env.config || {}) };
@@ -778,6 +788,7 @@ app.post('/api/extension/task/start', async (req, res) => {
         } catch (err) {
           activeRAMTasks.delete(taskKey);
           addLog('err', `[${toolName.toUpperCase()} ERROR] ${err.message}`, username);
+          addLog('err', `[@TASK_UPDATE@]${JSON.stringify({ type: 'error', message: err.message })}`, username);
         }
       })();
       return res.json({ ok: true, message: `${toolName} started in RAM` });
