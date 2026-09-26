@@ -774,7 +774,17 @@ class instagram {
     async loginWithExtensionSession(checkRemote = true, silent = false, sessionDataOverride = null) {
         try {
             const sessionData = sessionDataOverride || JSON.parse(process.env.IG_SESSION_JSON || '{}');
-            const cookies = sessionData._cookies || [];
+            let cookies = sessionData._cookies || [];
+            if ((!cookies || cookies.length === 0) && sessionData.cookies) {
+                if (typeof sessionData.cookies === 'string') {
+                    cookies = sessionData.cookies.split(';').map(pair => {
+                        const [name, ...rest] = pair.trim().split('=');
+                        return { name: name.trim(), value: rest.join('=').trim(), domain: '.instagram.com', path: '/', secure: true, httpOnly: false };
+                    }).filter(c => c.name && c.value);
+                } else if (Array.isArray(sessionData.cookies)) {
+                    cookies = sessionData.cookies;
+                }
+            }
             const browserUa = sessionData.ua || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
             if (checkRemote && !silent) {
@@ -1031,20 +1041,28 @@ class instagram {
             }
 
             if (!this.extUserInfo) {
-                this.extUserInfo = await this.ig.account.currentUser();
+                try {
+                    this.extUserInfo = await this.ig.account.currentUser();
+                } catch (e1) {
+                    try {
+                        if (this.pk || dsUserIdVal) {
+                            this.extUserInfo = await this.ig.user.info(this.pk || dsUserIdVal);
+                        }
+                    } catch (e2) { }
+                }
             }
             const user = this.extUserInfo;
-            this.username = user.username;
-            this.pk = user.pk;
+            this.username = (user && user.username) ? user.username : (sessionData.username || 'unknown');
+            this.pk = (user && user.pk) ? user.pk : (dsUserIdVal || this.pk);
 
             // Dynamically register activeLogger for this user once the username is resolved
-            if (global.activeLoggers && this.logFn) {
+            if (global.activeLoggers && this.logFn && this.username) {
                 global.activeLoggers.set(this.username.toLowerCase(), this.logFn);
             }
             if (checkRemote && !silent) {
                 // Muted for clean terminal: Connected successfully as @username
             }
-            return { username: user.username, pk: user.pk };
+            return { username: this.username, pk: this.pk };
         } catch (e) { return Promise.reject(new Error(`Extension Rejection: ${e.message}`)); }
     }
 
